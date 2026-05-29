@@ -7,12 +7,12 @@
     "authors": [
         {
             "name": "Tiime platform-dev",
-            "homepage": "https://github.com/ManakinCubber"
+            "homepage": "https://github.com/Tiime-Software"
         }
     ],
     "support": {
-        "issues": "https://github.com/ManakinCubber/monolog-masker/issues",
-        "source": "https://github.com/ManakinCubber/monolog-masker"
+        "issues": "https://github.com/Tiime-Software/MonologMasker/issues",
+        "source": "https://github.com/Tiime-Software/MonologMasker"
     },
     "require": {
         "php": ">=8.2",

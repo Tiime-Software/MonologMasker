@@ -1,4 +1,7 @@
-# 🛡️ Monolog Masker
+<p align="center">
+  <img src="https://assets.tiime.fr/auth0-universal-login/apps/logo_tiime.svg" height="40px"  alt="logo Tiime"><br>
+Monolog Masker
+</p>
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.2%2B-777BB4.svg?style=flat-square)
 ![Monolog Version](https://img.shields.io/badge/Monolog-3.x-blue.svg?style=flat-square)
