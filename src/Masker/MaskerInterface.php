@@ -17,4 +17,9 @@ interface MaskerInterface
      * @return array<array-key, mixed>
      */
     public function mask(array $data): array;
+
+    /**
+     * Masks sensitive tokens inside a standalone string (e.g. a log message).
+     */
+    public function maskString(string $value): string;
 }

@@ -6,6 +6,7 @@ namespace Tiime\MonologMasker\Tests\Matcher;
 
 use PHPUnit\Framework\TestCase;
 use Tiime\MonologMasker\Matcher\RegexValueMatcher;
+use Tiime\MonologMasker\Strategy\FullMaskStrategy;
 
 final class RegexValueMatcherTest extends TestCase
 {
@@ -25,8 +26,9 @@ final class RegexValueMatcherTest extends TestCase
         yield 'email' => ['john.doe@example.com'];
         yield 'jwt' => ['eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.s5pVl0lK3a8xZ_q2cQ8m1Q'];
         yield 'bearer' => ['Bearer abc123.def-456_ghi'];
-        yield 'credit card' => ['4242 4242 4242 4242'];
         yield 'iban' => ['FR7630006000011234567890189'];
+        yield 'aws access key' => ['AKIAIOSFODNN7EXAMPLE'];
+        yield 'google api key' => ['AIzaSyA1234567890abcdefghijklmnopqrstuv'];
         yield 'stripe key' => ['sk_live_abcdef0123456789ABCDEF'];
     }
 
@@ -81,5 +83,27 @@ final class RegexValueMatcherTest extends TestCase
         $matcher = new RegexValueMatcher([]);
 
         self::assertFalse($matcher->matches('john.doe@example.com'));
+    }
+
+    public function testRedactReplacesOnlyTheMatchedSubString(): void
+    {
+        $masked = RegexValueMatcher::withDefaults()->redact(
+            'contact john.doe@example.com please',
+            new FullMaskStrategy('***'),
+        );
+
+        self::assertSame('contact *** please', $masked);
+    }
+
+    public function testRedactLeavesNonMatchingValueUntouched(): void
+    {
+        $value = 'nothing sensitive here';
+
+        self::assertSame($value, RegexValueMatcher::withDefaults()->redact($value, new FullMaskStrategy('***')));
+    }
+
+    public function testRedactReturnsEmptyStringUnchanged(): void
+    {
+        self::assertSame('', RegexValueMatcher::withDefaults()->redact('', new FullMaskStrategy('***')));
     }
 }

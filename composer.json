@@ -4,6 +4,16 @@
     "type": "library",
     "license": "MIT",
     "keywords": ["monolog", "logging", "security", "gdpr", "masking", "pii", "secrets"],
+    "authors": [
+        {
+            "name": "Tiime platform-dev",
+            "homepage": "https://github.com/ManakinCubber"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/ManakinCubber/monolog-masker/issues",
+        "source": "https://github.com/ManakinCubber/monolog-masker"
+    },
     "require": {
         "php": ">=8.2",
         "monolog/monolog": "^3.0"

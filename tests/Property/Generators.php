@@ -6,7 +6,10 @@ namespace Tiime\MonologMasker\Tests\Property;
 
 use Innmind\BlackBox\Set;
 use Tiime\MonologMasker\Config\DefaultSensitiveKeys;
+use Tiime\MonologMasker\Matcher\ChainValueMatcher;
+use Tiime\MonologMasker\Matcher\CreditCardMatcher;
 use Tiime\MonologMasker\Matcher\RegexValueMatcher;
+use Tiime\MonologMasker\Matcher\ValueMatcherInterface;
 
 /**
  * black-box {@see Set} generators shared by the property tests.
@@ -39,9 +42,17 @@ final class Generators
      * Scalars guaranteed NOT to be flagged by the default value matcher:
      * small integers, booleans and short lower-case ASCII strings.
      */
+    /**
+     * The same value matcher the builder uses by default (regex + Luhn card).
+     */
+    public static function defaultValueMatcher(): ValueMatcherInterface
+    {
+        return new ChainValueMatcher(RegexValueMatcher::withDefaults(), new CreditCardMatcher());
+    }
+
     public static function safeScalars(): Set
     {
-        $matcher = RegexValueMatcher::withDefaults();
+        $matcher = self::defaultValueMatcher();
 
         return Set::either(
             Set::integers()->between(0, 9999),
@@ -57,7 +68,7 @@ final class Generators
      */
     public static function sensitiveValues(): Set
     {
-        $matcher = RegexValueMatcher::withDefaults();
+        $matcher = self::defaultValueMatcher();
 
         return Set::either(
             Set::email(),

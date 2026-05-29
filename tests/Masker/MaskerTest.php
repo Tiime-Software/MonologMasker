@@ -6,6 +6,7 @@ namespace Tiime\MonologMasker\Tests\Masker;
 
 use PHPUnit\Framework\TestCase;
 use Tiime\MonologMasker\Masker\Masker;
+use Tiime\MonologMasker\Matcher\CreditCardMatcher;
 use Tiime\MonologMasker\Matcher\KeyListMatcher;
 use Tiime\MonologMasker\Matcher\RegexValueMatcher;
 use Tiime\MonologMasker\Strategy\FullMaskStrategy;
@@ -216,13 +217,183 @@ final class MaskerTest extends TestCase
         self::assertSame(['a' => Masker::TRUNCATED], $result);
     }
 
-    public function testDoesNotMaskNonStringScalarValuesThatLookSensitive(): void
+    public function testLeavesScalarsNotRecognisedByTheMatcherUntouched(): void
     {
-        // Only string leaves are scanned by the value matcher: an integer that
-        // happens to look like a card number stays untouched.
-        $result = $this->masker()->mask(['card' => 4242424242424242]);
+        // This matcher (default regex patterns) does not recognise bare digit
+        // runs, so the integer passes through unchanged.
+        $result = $this->masker()->mask(['ref' => 4242424242424242]);
 
-        self::assertSame(['card' => 4242424242424242], $result);
+        self::assertSame(['ref' => 4242424242424242], $result);
+    }
+
+    public function testMasksIntegerValueWhenTheMatcherRecognisesIt(): void
+    {
+        $masker = new Masker(new KeyListMatcher([]), new CreditCardMatcher(), new FullMaskStrategy(self::MASK));
+
+        self::assertSame(['card' => self::MASK], $masker->mask(['card' => 4242424242424242]));
+    }
+
+    public function testMasksOnlyTheMatchedSubStringInAStringLeaf(): void
+    {
+        $result = $this->masker()->mask(['note' => 'mail john.doe@example.com ok']);
+
+        self::assertSame(['note' => 'mail '.self::MASK.' ok'], $result);
+    }
+
+    public function testTraversesObjectPublicProperties(): void
+    {
+        $object = new class {
+            public string $password = 'secret';
+            public string $name = 'alice';
+        };
+
+        self::assertSame(
+            ['u' => ['password' => self::MASK, 'name' => 'alice']],
+            $this->masker()->mask(['u' => $object]),
+        );
+    }
+
+    public function testTraversesJsonSerializableObjects(): void
+    {
+        $object = new class implements \JsonSerializable {
+            /**
+             * @return array<string, mixed>
+             */
+            public function jsonSerialize(): array
+            {
+                return ['token' => 'abc', 'x' => 1];
+            }
+        };
+
+        self::assertSame(
+            ['o' => ['token' => self::MASK, 'x' => 1]],
+            $this->masker()->mask(['o' => $object]),
+        );
+    }
+
+    public function testMasksStringableObjectsByValue(): void
+    {
+        $object = new class implements \Stringable {
+            public function __toString(): string
+            {
+                return 'john.doe@example.com';
+            }
+        };
+
+        self::assertSame(['o' => self::MASK], $this->masker()->mask(['o' => $object]));
+    }
+
+    public function testGuardsAgainstObjectCycles(): void
+    {
+        $object = new class {
+            public string $name = 'loop';
+            public ?object $self = null;
+        };
+        $object->self = $object;
+
+        self::assertSame(
+            ['o' => ['name' => 'loop', 'self' => Masker::TRUNCATED]],
+            $this->masker()->mask(['o' => $object]),
+        );
+    }
+
+    public function testDoesNotTraverseObjectsWhenDisabled(): void
+    {
+        $object = new \stdClass();
+        $object->password = 'secret';
+        $masker = new Masker(
+            new KeyListMatcher(['password']),
+            RegexValueMatcher::withDefaults(),
+            new FullMaskStrategy(self::MASK),
+            16,
+            false,
+        );
+
+        self::assertSame($object, $masker->mask(['o' => $object])['o']);
+    }
+
+    public function testMaskStringRedactsSensitiveTokens(): void
+    {
+        self::assertSame(
+            'email '.self::MASK.' end',
+            $this->masker()->maskString('email john.doe@example.com end'),
+        );
+    }
+
+    public function testMaskStringReturnsValueUnchangedWithoutValueMatcher(): void
+    {
+        $masker = new Masker(new KeyListMatcher([]), null, new FullMaskStrategy(self::MASK));
+
+        self::assertSame('plain text', $masker->maskString('plain text'));
+    }
+
+    public function testTruncatesObjectsBeyondMaxDepth(): void
+    {
+        $masker = new Masker(new KeyListMatcher([]), null, new FullMaskStrategy(self::MASK), 1);
+
+        self::assertSame(['o' => Masker::TRUNCATED], $masker->mask(['o' => new \stdClass()]));
+    }
+
+    public function testGuardsAgainstJsonSerializableCycles(): void
+    {
+        $object = new class implements \JsonSerializable {
+            /**
+             * @return array<string, mixed>
+             */
+            public function jsonSerialize(): array
+            {
+                return ['self' => $this];
+            }
+        };
+
+        self::assertSame(
+            ['o' => ['self' => Masker::TRUNCATED]],
+            $this->masker()->mask(['o' => $object]),
+        );
+    }
+
+    public function testDetachesTraversedObjectsSoSiblingsAreNotTruncated(): void
+    {
+        $object = new class {
+            public string $name = 'ok';
+        };
+
+        self::assertSame(
+            ['a' => ['name' => 'ok'], 'b' => ['name' => 'ok']],
+            $this->masker()->mask(['a' => $object, 'b' => $object]),
+        );
+    }
+
+    public function testDetachesJsonSerializableSoSiblingsAreNotTruncated(): void
+    {
+        $object = new class implements \JsonSerializable {
+            /**
+             * @return array<string, mixed>
+             */
+            public function jsonSerialize(): array
+            {
+                return ['token' => 'abc'];
+            }
+        };
+
+        self::assertSame(
+            ['a' => ['token' => self::MASK], 'b' => ['token' => self::MASK]],
+            $this->masker()->mask(['a' => $object, 'b' => $object]),
+        );
+    }
+
+    public function testCountsObjectDepthTowardsMaxDepth(): void
+    {
+        $object = new class {
+            /** @var array<string, mixed> */
+            public array $a = ['b' => ['c' => 'd']];
+        };
+        $masker = new Masker(new KeyListMatcher([]), null, new FullMaskStrategy(self::MASK), 3);
+
+        self::assertSame(
+            ['root' => ['a' => ['b' => Masker::TRUNCATED]]],
+            $masker->mask(['root' => $object]),
+        );
     }
 
     public function testDoesNotMutateNestedInput(): void

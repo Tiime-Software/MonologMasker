@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tiime\MonologMasker\Tests;
 
+use Monolog\Level;
+use Monolog\LogRecord;
 use PHPUnit\Framework\TestCase;
 use Tiime\MonologMasker\Masker\Masker;
 use Tiime\MonologMasker\MaskerBuilder;
@@ -78,9 +80,10 @@ final class MaskerBuilderTest extends TestCase
 
         $result = $masker->mask(['a' => 'john.doe@example.com', 'b' => 'a secretword here']);
 
-        // Default email pattern is gone; only the custom pattern applies.
+        // Default email pattern is gone; only the custom pattern applies, and
+        // only the matched sub-string is masked.
         self::assertSame('john.doe@example.com', $result['a']);
-        self::assertSame('***', $result['b']);
+        self::assertSame('a *** here', $result['b']);
     }
 
     public function testWithValuePatternsAddsToDefaults(): void
@@ -196,6 +199,110 @@ final class MaskerBuilderTest extends TestCase
         $result = $masker->mask(['password' => 'x']);
 
         self::assertSame(['password' => '***'], $result);
+    }
+
+    public function testSegmentMatchingCatchesCompoundKeysByDefault(): void
+    {
+        $masker = MaskerBuilder::create()
+            ->withoutValueMatching()
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildMasker();
+
+        $result = $masker->mask(['db_password' => 'x', 'userToken' => 'y', 'username' => 'z']);
+
+        self::assertSame(['db_password' => '***', 'userToken' => '***', 'username' => 'z'], $result);
+    }
+
+    public function testMatchKeysExactlyRestoresWholeStringMatching(): void
+    {
+        $masker = MaskerBuilder::create()
+            ->matchKeysExactly()
+            ->withoutValueMatching()
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildMasker();
+
+        $result = $masker->mask(['db_password' => 'x', 'password' => 'y']);
+
+        // Compound key no longer matched once exact matching is on.
+        self::assertSame(['db_password' => 'x', 'password' => '***'], $result);
+    }
+
+    public function testDetectsLuhnValidCardByDefault(): void
+    {
+        $masker = MaskerBuilder::create()->withStrategy(new FullMaskStrategy('***'))->buildMasker();
+
+        self::assertSame(['ref' => '***'], $masker->mask(['ref' => '4242424242424242']));
+        // A non-Luhn digit run is left alone.
+        self::assertSame(['ref' => '1234567890123'], $masker->mask(['ref' => '1234567890123']));
+    }
+
+    public function testObjectTraversalCanBeDisabled(): void
+    {
+        $object = new \stdClass();
+        $object->password = 'secret';
+        $masker = MaskerBuilder::create()->traverseObjects(false)->buildMasker();
+
+        self::assertSame($object, $masker->mask(['o' => $object])['o']);
+    }
+
+    public function testMessageMaskingCanBeDisabledViaBuilder(): void
+    {
+        $processor = MaskerBuilder::create()
+            ->maskMessage(false)
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildProcessor();
+
+        self::assertSame('mail john.doe@example.com', $processor($this->record())->message);
+    }
+
+    public function testMasksMessageByDefaultViaBuilder(): void
+    {
+        $processor = MaskerBuilder::create()->withStrategy(new FullMaskStrategy('***'))->buildProcessor();
+
+        self::assertSame('mail ***', $processor($this->record())->message);
+    }
+
+    public function testMessageMaskingCanBeReEnabledWithNoArgument(): void
+    {
+        $processor = MaskerBuilder::create()
+            ->maskMessage(false)
+            ->maskMessage()
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildProcessor();
+
+        self::assertSame('mail ***', $processor($this->record())->message);
+    }
+
+    public function testTraversesObjectsByDefaultViaBuilder(): void
+    {
+        $object = new \stdClass();
+        $object->password = 'secret';
+        $masker = MaskerBuilder::create()->withStrategy(new FullMaskStrategy('***'))->buildMasker();
+
+        self::assertSame(['o' => ['password' => '***']], $masker->mask(['o' => $object]));
+    }
+
+    public function testObjectTraversalCanBeReEnabledWithNoArgument(): void
+    {
+        $object = new \stdClass();
+        $object->password = 'secret';
+        $masker = MaskerBuilder::create()
+            ->traverseObjects(false)
+            ->traverseObjects()
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildMasker();
+
+        self::assertSame(['o' => ['password' => '***']], $masker->mask(['o' => $object]));
+    }
+
+    private function record(): LogRecord
+    {
+        return new LogRecord(
+            datetime: new \DateTimeImmutable('@0'),
+            channel: 'app',
+            level: Level::Info,
+            message: 'mail john.doe@example.com',
+        );
     }
 
     public function testDefaultMaxDepthIsSixteen(): void

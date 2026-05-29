@@ -24,15 +24,25 @@ final class DefaultValuePatterns
         // "Bearer <token>" / "Basic <token>" authorization values.
         'bearer' => '/\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+\/\-]+=*/i',
 
-        // 13-to-16 digit card numbers, optionally grouped by spaces or dashes.
-        'credit_card' => '/\b(?:\d[ \-]?){12,18}\d\b/',
-
         // IBAN (2 letters + 2 check digits + up to 30 alphanumerics).
         'iban' => '/\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/',
 
         // Stripe-style secret/restricted keys.
         'api_secret_key' => '/\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b/',
+
+        // AWS access key id.
+        'aws_access_key' => '/\bAKIA[0-9A-Z]{16}\b/',
+
+        // Google API key.
+        'google_api_key' => '/\bAIza[0-9A-Za-z_\-]{35}\b/',
+
+        // PEM-encoded private key block header.
+        'pem_private_key' => '/-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/',
     ];
+
+    // Card numbers are detected separately (with a Luhn check) by
+    // {@see \Tiime\MonologMasker\Matcher\CreditCardMatcher} to avoid the false
+    // positives a plain digit-run regex would cause.
 
     /**
      * @return array<string, string>
