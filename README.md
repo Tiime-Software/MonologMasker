@@ -108,6 +108,71 @@ cycle — is replaced with `[TRUNCATED]` rather than traversed.
 Both are configurable (placeholder, mask character, number of visible chars), and
 you can implement `MaskStrategyInterface` for anything else.
 
+## 🎼 Symfony integration
+
+Register the processor with the MonologBundle via the `monolog.processor` tag.
+
+> **Heads-up:** `MaskerBuilder` is **immutable** (`with*()` returns a new instance),
+> so Symfony's `calls:` cannot configure it. Use the builder as a factory object
+> (defaults) or a small factory class (custom config).
+
+**Defaults — one service:**
+
+```yaml
+# config/services.yaml
+services:
+    monolog_masker.builder:
+        class: Tiime\MonologMasker\MaskerBuilder
+        factory: ['Tiime\MonologMasker\MaskerBuilder', 'create']
+
+    Tiime\MonologMasker\Processor\MaskingProcessor:
+        factory: ['@monolog_masker.builder', 'buildProcessor']
+        tags:
+            # low priority so it runs LAST and also masks `extra` from other processors
+            - { name: monolog.processor, priority: -100 }
+```
+
+**Custom config — via a factory class:**
+
+```php
+// src/Logging/MaskingProcessorFactory.php
+namespace App\Logging;
+
+use Tiime\MonologMasker\MaskerBuilder;
+use Tiime\MonologMasker\Processor\MaskingProcessor;
+use Tiime\MonologMasker\Strategy\PartialMaskStrategy;
+
+final class MaskingProcessorFactory
+{
+    public static function create(): MaskingProcessor
+    {
+        return MaskerBuilder::create()
+            ->withSensitiveKeys(['x-internal-token'])
+            ->withStrategy(new PartialMaskStrategy(visible: 4))
+            ->buildProcessor();
+    }
+}
+```
+
+```yaml
+# config/services.yaml
+services:
+    Tiime\MonologMasker\Processor\MaskingProcessor:
+        factory: ['App\Logging\MaskingProcessorFactory', 'create']
+        tags:
+            - { name: monolog.processor, priority: -100 }
+```
+
+Scope it to a handler or channel if needed:
+`- { name: monolog.processor, handler: main }` (or `channel: app`).
+
+> Not on Packagist? Add the VCS repository and require it:
+> ```json
+> "repositories": [
+>     { "type": "vcs", "url": "git@github.com:Tiime-Software/MonologMasker.git" }
+> ]
+> ```
+
 ## 🧱 Architecture
 
 The masking engine is decoupled from Monolog so it can be tested and reused on
