@@ -1,4 +1,7 @@
-# 🛡️ Monolog Masker
+<p align="center">
+  <img src="https://assets.tiime.fr/auth0-universal-login/apps/logo_tiime.svg" height="40px"  alt="logo Tiime"><br>
+Monolog Masker
+</p>
 
 ![PHP Version](https://img.shields.io/badge/PHP-8.2%2B-777BB4.svg?style=flat-square)
 ![Monolog Version](https://img.shields.io/badge/Monolog-3.x-blue.svg?style=flat-square)
@@ -31,24 +34,30 @@ use Monolog\Logger;
 use Tiime\MonologMasker\MaskerBuilder;
 
 $logger = new Logger('app');
+// Push FIRST so Monolog runs it LAST — see "Processor ordering" below.
 $logger->pushProcessor(MaskerBuilder::create()->buildProcessor());
 
 $logger->info('payment', [
+    'db_password' => 'super-secret',
     'card_number' => '4242 4242 4242 4242',
-    'token'       => 'super-secret',
     'amount'      => 1000,
 ]);
 // context becomes:
-// ['card_number' => '████████', 'token' => '████████', 'amount' => 1000]
+// ['db_password' => '████████', 'card_number' => '████████', 'amount' => 1000]
 ```
 
-The processor walks `context` and `extra` recursively and masks two things:
+The processor walks `message`, `context` and `extra` and masks, **secure by default**:
 
-- **Sensitive keys** — values whose key matches a known sensitive name
-  (`password`, `token`, `api_key`, `authorization`, …). The whole sub-tree under
-  a sensitive key is collapsed, so nested secrets cannot slip through.
-- **Sensitive values** — leaf strings that *look* like a secret or PII (email,
-  credit card, IBAN, JWT, `Bearer …`, Stripe-style keys), regardless of their key.
+- **Sensitive keys** — values whose key contains a known sensitive *segment*
+  (`password`, `token`, `api_key`, `authorization`, …). Matching is segment-aware,
+  so compound names like `db_password`, `userToken` or `x-api-key` are caught too
+  (but not `tokenizer`). The whole sub-tree under a sensitive key is collapsed.
+- **Sensitive values** — tokens that *look* like a secret or PII (email, IBAN, JWT,
+  `Bearer …`, AWS/Google keys, PEM blocks, and **Luhn-validated** card numbers),
+  wherever they appear — including the log **message**. Only the matched
+  sub-string is masked, so surrounding text is preserved.
+- **Objects** in the context are traversed too (`JsonSerializable`, `Stringable`,
+  or public properties), so secrets carried by DTOs don't slip through unmasked.
 
 ## ⚙️ Configuration
 
@@ -72,7 +81,22 @@ Other knobs:
 
 - `withKeyMatcher()` / `withValueMatcher()` — replace detection entirely with
   your own `KeyMatcherInterface` / `ValueMatcherInterface`.
-- `withoutValueMatching()` — key-based masking only (skip the regex pass).
+- `withoutValueMatching()` — key-based masking only (skip value detection).
+- `matchKeysExactly()` — whole-string key matching instead of segment-aware
+  (no compound-key detection, fewer false positives).
+- `maskMessage(false)` — stop masking the log message.
+- `traverseObjects(false)` — leave objects untouched.
+
+### Processor ordering
+
+Monolog runs processors in **reverse** of their push order. To also mask the
+`extra` data added by other processors (e.g. `WebProcessor`), push the masker
+**first** so it runs **last**.
+
+### Depth limit
+
+Recursion is bounded by `maxDepth` (default 16); anything deeper — and any object
+cycle — is replaced with `[TRUNCATED]` rather than traversed.
 
 ### Masking strategies
 
@@ -89,12 +113,13 @@ you can implement `MaskStrategyInterface` for anything else.
 The masking engine is decoupled from Monolog so it can be tested and reused on
 its own:
 
-- `Masker` — recursive, immutable engine (never mutates its input; bounded by a
-  configurable max depth that also guards against self-referential arrays).
+- `Masker` — recursive, immutable engine (never mutates its input; traverses
+  arrays and objects; bounded by a max depth that also guards against cycles).
 - `MaskingProcessor` — thin Monolog adapter (`ProcessorInterface`).
-- `Matcher\*` — pluggable key/value detection (`KeyListMatcher`, `RegexValueMatcher`).
+- `Matcher\*` — pluggable detection: keys (`KeyListMatcher`, `SegmentKeyMatcher`)
+  and values (`RegexValueMatcher`, `CreditCardMatcher`, `ChainValueMatcher`).
 - `Strategy\*` — pluggable masking (`FullMaskStrategy`, `PartialMaskStrategy`).
-- `MaskerBuilder` — fluent factory tying it all together with sane defaults.
+- `MaskerBuilder` — fluent factory tying it all together with secure defaults.
 
 ## ✅ Development
 

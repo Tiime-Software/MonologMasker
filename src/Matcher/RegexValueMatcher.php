@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tiime\MonologMasker\Matcher;
 
 use Tiime\MonologMasker\Config\DefaultValuePatterns;
+use Tiime\MonologMasker\Strategy\MaskStrategyInterface;
 
 /**
  * Matches a string value against a set of PCRE patterns. Patterns are validated
@@ -57,5 +58,22 @@ final class RegexValueMatcher implements ValueMatcherInterface
         }
 
         return false;
+    }
+
+    public function redact(string $value, MaskStrategyInterface $strategy): string
+    {
+        if ('' === $value) {
+            return $value;
+        }
+
+        foreach ($this->patterns as $pattern) {
+            $value = preg_replace_callback(
+                $pattern,
+                static fn (array $matches): string => $strategy->mask($matches[0]),
+                $value,
+            ) ?? $value;
+        }
+
+        return $value;
     }
 }

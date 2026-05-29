@@ -115,4 +115,41 @@ final class MaskingProcessorTest extends TestCase
         self::assertSame([], $processed->context);
         self::assertSame([], $processed->extra);
     }
+
+    public function testMasksTheMessageByDefault(): void
+    {
+        $processor = new MaskingProcessor($this->masker());
+
+        $processed = $processor($this->record('login from john.doe@example.com'));
+
+        self::assertSame('login from ***', $processed->message);
+    }
+
+    public function testMessageMaskingCanBeDisabled(): void
+    {
+        $processor = new MaskingProcessor($this->masker(), false);
+
+        $processed = $processor($this->record('login from john.doe@example.com'));
+
+        self::assertSame('login from john.doe@example.com', $processed->message);
+    }
+
+    private function masker(): Masker
+    {
+        return new Masker(
+            new KeyListMatcher(['password']),
+            RegexValueMatcher::withDefaults(),
+            new FullMaskStrategy('***'),
+        );
+    }
+
+    private function record(string $message): LogRecord
+    {
+        return new LogRecord(
+            datetime: new \DateTimeImmutable('@0'),
+            channel: 'app',
+            level: Level::Info,
+            message: $message,
+        );
+    }
 }

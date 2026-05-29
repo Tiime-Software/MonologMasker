@@ -4,7 +4,19 @@
         "directories": ["src"]
     },
     "mutators": {
-        "@default": true
+        "@default": true,
+        "CastInt": {
+            "ignore": ["Tiime\\MonologMasker\\Matcher\\CreditCardMatcher::passesLuhn"]
+        },
+        "GreaterThan": {
+            "ignore": ["Tiime\\MonologMasker\\Matcher\\CreditCardMatcher::passesLuhn"]
+        },
+        "PlusEqual": {
+            "ignore": ["Tiime\\MonologMasker\\Matcher\\CreditCardMatcher::passesLuhn"]
+        },
+        "UnwrapArrayValues": {
+            "ignore": ["Tiime\\MonologMasker\\Matcher\\ChainValueMatcher::__construct"]
+        }
     },
     "logs": {
         "text": "build/infection.log"

@@ -7,6 +7,7 @@ namespace Tiime\MonologMasker\Tests\Property;
 use Innmind\BlackBox\PHPUnit\BlackBox;
 use Innmind\BlackBox\Set;
 use PHPUnit\Framework\TestCase;
+use Tiime\MonologMasker\Matcher\CreditCardMatcher;
 use Tiime\MonologMasker\Matcher\KeyListMatcher;
 use Tiime\MonologMasker\Matcher\RegexValueMatcher;
 
@@ -30,7 +31,7 @@ final class MatcherPropertyTest extends TestCase
 
     public function testCuratedSensitiveValuesAlwaysMatch(): void
     {
-        $matcher = RegexValueMatcher::withDefaults();
+        $matcher = Generators::defaultValueMatcher();
 
         $this
             ->forAll(Set::of(
@@ -58,5 +59,44 @@ final class MatcherPropertyTest extends TestCase
             ->then(function (string $value) use ($matcher): void {
                 $this->assertFalse($matcher->matches($value));
             });
+    }
+
+    public function testCreditCardDetectionAgreesWithLuhn(): void
+    {
+        $matcher = new CreditCardMatcher();
+
+        $this
+            ->forAll(Set::sequence(Set::integers()->between(0, 9))->between(13, 16))
+            ->then(function (array $digits) use ($matcher): void {
+                $number = implode('', $digits);
+
+                // The matcher flags a bare digit run iff it satisfies Luhn.
+                $this->assertSame($this->isLuhnValid($number), $matcher->matches($number));
+            });
+    }
+
+    /**
+     * Independent Luhn implementation used to cross-check the matcher.
+     */
+    private function isLuhnValid(string $digits): bool
+    {
+        $sum = 0;
+        $double = false;
+
+        for ($i = \strlen($digits) - 1; $i >= 0; --$i) {
+            $value = (int) $digits[$i];
+
+            if ($double) {
+                $value *= 2;
+                if ($value > 9) {
+                    $value -= 9;
+                }
+            }
+
+            $sum += $value;
+            $double = !$double;
+        }
+
+        return 0 === $sum % 10;
     }
 }

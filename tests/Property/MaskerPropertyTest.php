@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Tiime\MonologMasker\Tests\Property;
 
 use Innmind\BlackBox\PHPUnit\BlackBox;
+use Innmind\BlackBox\Set;
 use PHPUnit\Framework\TestCase;
 use Tiime\MonologMasker\Masker\Masker;
 use Tiime\MonologMasker\MaskerBuilder;
-use Tiime\MonologMasker\Matcher\KeyListMatcher;
+use Tiime\MonologMasker\Matcher\SegmentKeyMatcher;
 use Tiime\MonologMasker\Strategy\FullMaskStrategy;
 
 /**
@@ -118,12 +119,30 @@ final class MaskerPropertyTest extends TestCase
             });
     }
 
+    public function testMasksSensitiveDataCarriedByObjects(): void
+    {
+        $this
+            ->forAll(
+                Set::of('password', 'token', 'secret', 'apikey', 'authorization'),
+                Generators::safeScalars(),
+            )
+            ->then(function (string $property, mixed $value): void {
+                $object = new \stdClass();
+                $object->{$property} = $value;
+
+                $masked = $this->masker()->mask(['carrier' => $object]);
+
+                // The object is traversed and its sensitive property masked.
+                $this->assertSame(self::MASK, $masked['carrier'][$property]);
+            });
+    }
+
     /**
      * @param array<array-key, mixed> $output
      */
     private function assertSensitiveKeysMasked(array $output): void
     {
-        $keyMatcher = KeyListMatcher::withDefaults();
+        $keyMatcher = SegmentKeyMatcher::withDefaults();
 
         foreach ($output as $key => $value) {
             if (\is_string($key) && $keyMatcher->matches($key)) {
