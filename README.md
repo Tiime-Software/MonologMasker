@@ -166,13 +166,6 @@ services:
 Scope it to a handler or channel if needed:
 `- { name: monolog.processor, handler: main }` (or `channel: app`).
 
-> Not on Packagist? Add the VCS repository and require it:
-> ```json
-> "repositories": [
->     { "type": "vcs", "url": "git@github.com:Tiime-Software/MonologMasker.git" }
-> ]
-> ```
-
 ## 🧱 Architecture
 
 The masking engine is decoupled from Monolog so it can be tested and reused on
