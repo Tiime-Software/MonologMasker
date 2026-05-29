@@ -1,0 +1,9 @@
+parameters:
+    level: max
+    paths:
+        - src
+        - tests
+    excludePaths:
+        # Property tests use the black-box DSL, typed for Psalm not PHPStan;
+        # they are validated by execution (composer proofs), not static analysis.
+        - tests/Property

@@ -1,0 +1,54 @@
+{
+    "name": "tiime/monolog-masker",
+    "description": "A lightweight, zero-dependency Monolog processor to keep sensitive data and secrets out of your logs.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["monolog", "logging", "security", "gdpr", "masking", "pii", "secrets"],
+    "require": {
+        "php": ">=8.2",
+        "monolog/monolog": "^3.0"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.64",
+        "infection/infection": "^0.27",
+        "innmind/black-box": "^6",
+        "phpstan/phpstan": "^1.12",
+        "phpunit/phpunit": "^10.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Tiime\\MonologMasker\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tiime\\MonologMasker\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "phpstan/extension-installer": false,
+            "infection/extension-installer": true
+        }
+    },
+    "scripts": {
+        "cs-check": "php-cs-fixer fix --dry-run --diff",
+        "cs-fix": "php-cs-fixer fix",
+        "phpstan": "phpstan analyse",
+        "test": "phpunit --testsuite unit",
+        "coverage": [
+            "phpunit --testsuite unit --coverage-clover build/clover.xml --coverage-text",
+            "php tools/coverage-check.php build/clover.xml 100"
+        ],
+        "infection": "infection --threads=max --min-msi=100 --min-covered-msi=100 --test-framework-options=\"--testsuite=unit\"",
+        "proofs": "phpunit --testsuite property",
+        "validate-all": [
+            "@cs-check",
+            "@phpstan",
+            "@coverage",
+            "@infection",
+            "@proofs"
+        ]
+    }
+}

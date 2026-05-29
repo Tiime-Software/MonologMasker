@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Check coding standards
+        run: composer cs-check
+
+      - name: Static analysis
+        run: composer phpstan
+
+      - name: Tests + coverage gate (100%)
+        run: composer coverage
+
+      - name: Mutation testing (MSI 100%)
+        run: composer infection
+
+      - name: Property-based tests (black-box)
+        run: composer proofs
