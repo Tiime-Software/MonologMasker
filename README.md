@@ -98,6 +98,30 @@ Monolog runs processors in **reverse** of their push order. To also mask the
 Recursion is bounded by `maxDepth` (default 16); anything deeper — and any object
 cycle — is replaced with `[TRUNCATED]` rather than traversed.
 
+### JSON inside a string value
+
+Some logs carry a serialized payload as a *string* — typically the raw body of a
+POST request. Declare those keys with `withJsonKeys()` and the processor decodes
+the JSON, masks it recursively (same key + value rules), then re-encodes it:
+
+```php
+$processor = MaskerBuilder::create()
+    ->withJsonKeys(['body', 'request_body'])
+    ->buildProcessor();
+
+$logger->info('request', ['body' => '{"username":"alice","password":"hunter2"}']);
+// context becomes:
+// ['body' => '{"username":"alice","password":"████████"}']
+```
+
+- **Opt-in**: with no JSON keys declared the behaviour is unchanged — such a
+  string stays an opaque leaf.
+- A *decodable* JSON value takes precedence over a sensitive-key match, so a key
+  that is both sensitive and declared JSON is looked *into* rather than collapsed.
+  A non-decodable value (or a JSON scalar) falls back to the normal rules.
+- Re-encoding normalises formatting (whitespace, escaping; an empty `{}` comes
+  back as `[]`) — the masked payload is semantically equal, not byte-identical.
+
 ### Masking strategies
 
 | Strategy | Result | When |
@@ -172,7 +196,8 @@ The masking engine is decoupled from Monolog so it can be tested and reused on
 its own:
 
 - `Masker` — recursive, immutable engine (never mutates its input; traverses
-  arrays and objects; bounded by a max depth that also guards against cycles).
+  arrays and objects; bounded by a max depth that also guards against cycles;
+  optionally decodes/masks/re-encodes JSON held in string values via JSON keys).
 - `MaskingProcessor` — thin Monolog adapter (`ProcessorInterface`).
 - `Matcher\*` — pluggable detection: keys (`KeyListMatcher`, `SegmentKeyMatcher`)
   and values (`RegexValueMatcher`, `CreditCardMatcher`, `ChainValueMatcher`).

@@ -21,6 +21,13 @@ use Tiime\MonologMasker\Strategy\MaskStrategyInterface;
  * their public properties — matching how Monolog would otherwise serialise them,
  * so secrets they carry cannot slip through unmasked.
  *
+ * Keys flagged by the optional JSON-key matcher are treated as structured
+ * containers: when their value is a string that decodes to JSON, it is decoded,
+ * masked recursively, then re-encoded — so secrets buried inside a serialized
+ * payload (e.g. a logged request body) are masked too. A decodable JSON value
+ * takes precedence over a sensitive-key match; a non-decodable one falls back to
+ * the normal rules.
+ *
  * The input is never mutated — {@see mask()} returns a fresh copy. Recursion is
  * bounded by a configurable maximum depth (branches beyond it become a
  * truncation marker), and object cycles are tracked to avoid infinite loops.
@@ -35,6 +42,7 @@ final class Masker implements MaskerInterface
         private readonly MaskStrategyInterface $strategy,
         private readonly int $maxDepth = 16,
         private readonly bool $traverseObjects = true,
+        private readonly ?KeyMatcherInterface $jsonKeyMatcher = null,
     ) {
         if ($maxDepth < 1) {
             throw new \InvalidArgumentException('The maximum depth must be at least 1.');
@@ -66,6 +74,16 @@ final class Masker implements MaskerInterface
         $masked = [];
 
         foreach ($data as $key => $value) {
+            if (null !== $this->jsonKeyMatcher && \is_string($value) && $this->jsonKeyMatcher->matches($key)) {
+                $decoded = $this->decodeJsonArray($value);
+                if (null !== $decoded) {
+                    $masked[$key] = $this->encodeJson($this->processArray($decoded, $depth + 1, $seen));
+
+                    continue;
+                }
+                // Not decodable JSON: fall through to the normal rules below.
+            }
+
             $masked[$key] = $this->keyMatcher->matches($key)
                 ? $this->maskValue($value)
                 : $this->processValue($value, $depth, $seen);
@@ -182,5 +200,35 @@ final class Masker implements MaskerInterface
         }
 
         return $this->strategy->mask('');
+    }
+
+    /**
+     * Decodes a string to an associative array, or returns null when the string
+     * is not valid JSON or decodes to a scalar — in which case the caller falls
+     * back to the normal key/value masking rules.
+     *
+     * @return array<array-key, mixed>|null
+     */
+    private function decodeJsonArray(string $value): ?array
+    {
+        $decoded = json_decode($value, true);
+
+        if (\JSON_ERROR_NONE !== json_last_error() || !\is_array($decoded)) {
+            return null;
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * Re-encodes a masked structure to a JSON string. {@see \JSON_THROW_ON_ERROR}
+     * narrows the return type to string and is unreachable in practice: the input
+     * always originates from a successful {@see decodeJsonArray()}.
+     *
+     * @param array<array-key, mixed> $masked
+     */
+    private function encodeJson(array $masked): string
+    {
+        return json_encode($masked, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
     }
 }
