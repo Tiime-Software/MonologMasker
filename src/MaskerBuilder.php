@@ -32,6 +32,7 @@ final class MaskerBuilder
     /**
      * @param list<string>          $additionalKeys
      * @param array<string, string> $additionalPatterns
+     * @param list<string>          $jsonKeys
      */
     private function __construct(
         private readonly ?KeyMatcherInterface $keyMatcher = null,
@@ -44,6 +45,7 @@ final class MaskerBuilder
         private readonly bool $exactKeys = false,
         private readonly bool $maskMessage = true,
         private readonly bool $traverseObjects = true,
+        private readonly array $jsonKeys = [],
     ) {
     }
 
@@ -60,6 +62,18 @@ final class MaskerBuilder
     public function withSensitiveKeys(array $keys): self
     {
         return $this->cloneWith(additionalKeys: [...$this->additionalKeys, ...$keys]);
+    }
+
+    /**
+     * Declares keys whose string value holds JSON to be masked in depth: the
+     * value is decoded, masked recursively, then re-encoded. Off by default
+     * (opt-in). Accumulates across calls.
+     *
+     * @param list<string> $keys
+     */
+    public function withJsonKeys(array $keys): self
+    {
+        return $this->cloneWith(jsonKeys: [...$this->jsonKeys, ...$keys]);
     }
 
     /**
@@ -135,12 +149,15 @@ final class MaskerBuilder
 
     public function buildMasker(): Masker
     {
+        $jsonKeyMatcher = [] === $this->jsonKeys ? null : new KeyListMatcher($this->jsonKeys);
+
         return new Masker(
             $this->keyMatcher ?? $this->defaultKeyMatcher(),
             $this->valueMatchingEnabled ? ($this->valueMatcher ?? $this->defaultValueMatcher()) : null,
             $this->strategy ?? new FullMaskStrategy(),
             $this->maxDepth,
             $this->traverseObjects,
+            $jsonKeyMatcher,
         );
     }
 
@@ -167,6 +184,7 @@ final class MaskerBuilder
     /**
      * @param list<string>|null          $additionalKeys
      * @param array<string, string>|null $additionalPatterns
+     * @param list<string>|null          $jsonKeys
      */
     private function cloneWith(
         ?KeyMatcherInterface $keyMatcher = null,
@@ -179,6 +197,7 @@ final class MaskerBuilder
         ?bool $exactKeys = null,
         ?bool $maskMessage = null,
         ?bool $traverseObjects = null,
+        ?array $jsonKeys = null,
     ): self {
         return new self(
             $keyMatcher ?? $this->keyMatcher,
@@ -191,6 +210,7 @@ final class MaskerBuilder
             $exactKeys ?? $this->exactKeys,
             $maskMessage ?? $this->maskMessage,
             $traverseObjects ?? $this->traverseObjects,
+            $jsonKeys ?? $this->jsonKeys,
         );
     }
 }

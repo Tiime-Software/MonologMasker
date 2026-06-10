@@ -295,6 +295,66 @@ final class MaskerBuilderTest extends TestCase
         self::assertSame(['o' => ['password' => '***']], $masker->mask(['o' => $object]));
     }
 
+    public function testWithJsonKeysMasksInsideJsonStringValue(): void
+    {
+        $masker = MaskerBuilder::create()
+            ->withJsonKeys(['body'])
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildMasker();
+
+        $result = $masker->mask(['body' => '{"password":"x","ok":"y"}']);
+
+        self::assertSame(['body' => '{"password":"***","ok":"y"}'], $result);
+    }
+
+    public function testWithJsonKeysAcceptsSeveralKeysAtOnce(): void
+    {
+        $masker = MaskerBuilder::create()
+            ->withJsonKeys(['body', 'payload'])
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildMasker();
+
+        $result = $masker->mask([
+            'body' => '{"password":"x"}',
+            'payload' => '{"token":"y"}',
+        ]);
+
+        self::assertSame([
+            'body' => '{"password":"***"}',
+            'payload' => '{"token":"***"}',
+        ], $result);
+    }
+
+    public function testWithJsonKeysAccumulatesAcrossCalls(): void
+    {
+        $masker = MaskerBuilder::create()
+            ->withJsonKeys(['body'])
+            ->withJsonKeys(['payload'])
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildMasker();
+
+        $result = $masker->mask([
+            'body' => '{"password":"x"}',
+            'payload' => '{"token":"y"}',
+        ]);
+
+        self::assertSame([
+            'body' => '{"password":"***"}',
+            'payload' => '{"token":"***"}',
+        ], $result);
+    }
+
+    public function testWithoutJsonKeysLeavesJsonStringsUntouched(): void
+    {
+        $masker = MaskerBuilder::create()
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildMasker();
+
+        $result = $masker->mask(['body' => '{"password":"x"}']);
+
+        self::assertSame(['body' => '{"password":"x"}'], $result);
+    }
+
     private function record(): LogRecord
     {
         return new LogRecord(

@@ -16,13 +16,17 @@ final class MaskerTest extends TestCase
 {
     private const MASK = '***';
 
-    private function masker(int $maxDepth = 16): Masker
+    /**
+     * @param list<string> $jsonKeys
+     */
+    private function masker(int $maxDepth = 16, array $jsonKeys = []): Masker
     {
         return new Masker(
             new KeyListMatcher(['password', 'token']),
             RegexValueMatcher::withDefaults(),
             new FullMaskStrategy(self::MASK),
             $maxDepth,
+            jsonKeyMatcher: [] === $jsonKeys ? null : new KeyListMatcher($jsonKeys),
         );
     }
 
@@ -433,6 +437,148 @@ final class MaskerTest extends TestCase
         $result = $masker->mask(self::nestedArray(20));
 
         self::assertSame(16, self::preservedDepth($result));
+    }
+
+    public function testMasksSensitiveKeyInsideJsonStringValue(): void
+    {
+        // A declared JSON key is decoded, masked in depth, then re-encoded.
+        // A sibling string key that is NOT a JSON key follows the normal rules.
+        $result = $this->masker(jsonKeys: ['body'])->mask([
+            'body' => '{"username":"alice","password":"hunter2"}',
+            'channel' => 'web',
+        ]);
+
+        self::assertSame([
+            'body' => '{"username":"alice","password":"***"}',
+            'channel' => 'web',
+        ], $result);
+    }
+
+    public function testMasksValueMatchedByPatternInsideJsonStringValue(): void
+    {
+        $result = $this->masker(jsonKeys: ['body'])->mask([
+            'body' => '{"contact":"john.doe@example.com"}',
+        ]);
+
+        self::assertSame(['body' => '{"contact":"***"}'], $result);
+    }
+
+    public function testMasksNestedJsonStructureInsideStringValue(): void
+    {
+        $result = $this->masker(jsonKeys: ['body'])->mask([
+            'body' => '{"user":{"name":"alice","password":"x"}}',
+        ]);
+
+        self::assertSame(['body' => '{"user":{"name":"alice","password":"***"}}'], $result);
+    }
+
+    public function testJsonInsideStringValueRespectsMaxDepth(): void
+    {
+        // The decoded structure is processed at depth+1, so the depth budget
+        // keeps applying across the JSON boundary.
+        $result = $this->masker(2, ['body'])->mask([
+            'body' => '{"a":{"b":"c"}}',
+        ]);
+
+        self::assertSame(['body' => '{"a":"[TRUNCATED]"}'], $result);
+    }
+
+    public function testJsonInsideStringValuePreservedWhenWithinMaxDepth(): void
+    {
+        // Same payload, one more depth level available: the decoded structure is
+        // fully preserved — pins the exact depth+1 budget across the boundary.
+        $result = $this->masker(3, ['body'])->mask([
+            'body' => '{"a":{"b":"c"}}',
+        ]);
+
+        self::assertSame(['body' => '{"a":{"b":"c"}}'], $result);
+    }
+
+    public function testJsonReEncodingLeavesSlashesAndUnicodeUnescaped(): void
+    {
+        // Re-encoding keeps payloads readable: slashes and non-ASCII characters
+        // are not escaped to \/ or \uXXXX.
+        $result = $this->masker(jsonKeys: ['body'])->mask([
+            'body' => '{"url":"a/b","note":"é"}',
+        ]);
+
+        self::assertSame(['body' => '{"url":"a/b","note":"é"}'], $result);
+    }
+
+    public function testJsonWinsOverSensitiveKeyWhenValueIsValidJson(): void
+    {
+        // 'token' is BOTH sensitive and declared JSON: a valid JSON value is
+        // looked into rather than collapsed.
+        $result = $this->masker(jsonKeys: ['token'])->mask([
+            'token' => '{"id":1,"password":"x"}',
+        ]);
+
+        self::assertSame(['token' => '{"id":1,"password":"***"}'], $result);
+    }
+
+    public function testJsonKeyWithInvalidJsonFallsBackToSensitiveCollapse(): void
+    {
+        // 'token' is sensitive AND declared JSON, but the value is not decodable:
+        // it falls back to the normal rules, so the sensitive key collapses it.
+        $result = $this->masker(jsonKeys: ['token'])->mask(['token' => 'not-json']);
+
+        self::assertSame(['token' => self::MASK], $result);
+    }
+
+    public function testJsonKeyWithInvalidJsonFallsBackToLeafValueMatching(): void
+    {
+        // Not sensitive, not decodable JSON: the leaf value matcher still runs.
+        $result = $this->masker(jsonKeys: ['body'])->mask([
+            'body' => 'john.doe@example.com',
+            'note' => 'plain text',
+        ]);
+
+        self::assertSame(['body' => self::MASK, 'note' => 'plain text'], $result);
+    }
+
+    public function testJsonKeyWithNonStringValueRecursesAsArray(): void
+    {
+        // A JSON key holding an actual array (already decoded) is recursed
+        // normally — the JSON branch only applies to string values.
+        $result = $this->masker(jsonKeys: ['body'])->mask([
+            'body' => ['password' => 'x', 'safe' => 'y'],
+        ]);
+
+        self::assertSame(['body' => ['password' => self::MASK, 'safe' => 'y']], $result);
+    }
+
+    public function testJsonKeyWithScalarJsonFallsBack(): void
+    {
+        // A string decoding to a scalar (not an array) is not treated as a
+        // structured payload; it falls back to the normal leaf rules.
+        $result = $this->masker(jsonKeys: ['body'])->mask(['body' => '42']);
+
+        self::assertSame(['body' => '42'], $result);
+    }
+
+    public function testMasksJsonListInsideStringValue(): void
+    {
+        $result = $this->masker(jsonKeys: ['body'])->mask([
+            'body' => '["john.doe@example.com","safe"]',
+        ]);
+
+        self::assertSame(['body' => '["***","safe"]'], $result);
+    }
+
+    public function testWithoutJsonKeysLeavesJsonStringsUntouched(): void
+    {
+        // No JSON keys configured: a JSON string is just an opaque leaf.
+        $result = $this->masker()->mask(['body' => '{"password":"x"}']);
+
+        self::assertSame(['body' => '{"password":"x"}'], $result);
+    }
+
+    public function testIsIdempotentOnJsonStringValue(): void
+    {
+        $masker = $this->masker(jsonKeys: ['body']);
+        $once = $masker->mask(['body' => '{"password":"hunter2","email":"john.doe@example.com"}']);
+
+        self::assertSame($once, $masker->mask($once));
     }
 
     /**
