@@ -162,6 +162,90 @@ final class MaskerBuilderTest extends TestCase
         self::assertSame(['x' => '***', 'y' => '***'], $result);
     }
 
+    public function testWithoutValuePatternsDropsNamedDefault(): void
+    {
+        $masker = MaskerBuilder::create()
+            ->withoutValuePatterns(['email'])
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildMasker();
+
+        $result = $masker->mask([
+            'contact' => 'john.doe@example.com',
+            'card' => '4242424242424242',
+        ]);
+
+        // The excluded default no longer matches, but other defaults (and card
+        // detection) stay active.
+        self::assertSame('john.doe@example.com', $result['contact']);
+        self::assertSame('***', $result['card']);
+    }
+
+    public function testWithoutValuePatternsKeepsAddedPatterns(): void
+    {
+        $masker = MaskerBuilder::create()
+            ->withValuePatterns(['fr_phone' => '/\b0[1-9](?:\d{2}){4}\b/'])
+            ->withoutValuePatterns(['email'])
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildMasker();
+
+        $result = $masker->mask([
+            'phone' => '0612345678',
+            'email' => 'john.doe@example.com',
+        ]);
+
+        // Added pattern still masks; the excluded default does not.
+        self::assertSame('***', $result['phone']);
+        self::assertSame('john.doe@example.com', $result['email']);
+    }
+
+    public function testWithoutValuePatternsDropsSeveralNamesAtOnce(): void
+    {
+        $masker = MaskerBuilder::create()
+            ->withoutValuePatterns(['email', 'iban'])
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildMasker();
+
+        $result = $masker->mask([
+            'email' => 'john.doe@example.com',
+            'iban' => 'FR7630006000011234567890189',
+        ]);
+
+        // Every name passed in a single call is dropped, not just the first.
+        self::assertSame('john.doe@example.com', $result['email']);
+        self::assertSame('FR7630006000011234567890189', $result['iban']);
+    }
+
+    public function testWithoutValuePatternsAccumulatesAcrossCalls(): void
+    {
+        $masker = MaskerBuilder::create()
+            ->withoutValuePatterns(['email'])
+            ->withoutValuePatterns(['iban'])
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildMasker();
+
+        $result = $masker->mask([
+            'email' => 'john.doe@example.com',
+            'iban' => 'FR7630006000011234567890189',
+        ]);
+
+        // Both excluded names are dropped.
+        self::assertSame('john.doe@example.com', $result['email']);
+        self::assertSame('FR7630006000011234567890189', $result['iban']);
+    }
+
+    public function testWithoutValuePatternsIgnoresUnknownName(): void
+    {
+        $masker = MaskerBuilder::create()
+            ->withoutValuePatterns(['does_not_exist'])
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildMasker();
+
+        $result = $masker->mask(['contact' => 'john.doe@example.com']);
+
+        // An unknown name is a no-op; known defaults still apply.
+        self::assertSame('***', $result['contact']);
+    }
+
     public function testLatestKeyMatcherWins(): void
     {
         $masker = MaskerBuilder::create()
@@ -260,6 +344,25 @@ final class MaskerBuilderTest extends TestCase
         $processor = MaskerBuilder::create()->withStrategy(new FullMaskStrategy('***'))->buildProcessor();
 
         self::assertSame('mail ***', $processor($this->record())->message);
+    }
+
+    public function testWithoutValuePatternsAppliesToTheMessageToo(): void
+    {
+        $processor = MaskerBuilder::create()
+            ->withoutValuePatterns(['email'])
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildProcessor();
+
+        $record = new LogRecord(
+            datetime: new \DateTimeImmutable('@0'),
+            channel: 'app',
+            level: Level::Info,
+            message: 'mail john.doe@example.com card 4242424242424242',
+        );
+
+        // The exclusion flows through the message path, not just context:
+        // the email is left intact while card detection still redacts.
+        self::assertSame('mail john.doe@example.com card ***', $processor($record)->message);
     }
 
     public function testMessageMaskingCanBeReEnabledWithNoArgument(): void
