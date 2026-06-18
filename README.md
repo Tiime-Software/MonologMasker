@@ -82,6 +82,8 @@ Other knobs:
 - `withKeyMatcher()` / `withValueMatcher()` — replace detection entirely with
   your own `KeyMatcherInterface` / `ValueMatcherInterface`.
 - `withoutValueMatching()` — key-based masking only (skip value detection).
+- `withoutValuePatterns(['email', 'iban'])` — drop specific default value
+  patterns by name (keeps the others and card detection).
 - `matchKeysExactly()` — whole-string key matching instead of segment-aware
   (no compound-key detection, fewer false positives).
 - `maskMessage(false)` — stop masking the log message.

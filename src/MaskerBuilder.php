@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tiime\MonologMasker;
 
+use Tiime\MonologMasker\Config\DefaultValuePatterns;
 use Tiime\MonologMasker\Masker\Masker;
 use Tiime\MonologMasker\Matcher\ChainValueMatcher;
 use Tiime\MonologMasker\Matcher\CreditCardMatcher;
@@ -33,6 +34,7 @@ final class MaskerBuilder
      * @param list<string>          $additionalKeys
      * @param array<string, string> $additionalPatterns
      * @param list<string>          $jsonKeys
+     * @param list<string>          $excludedPatterns
      */
     private function __construct(
         private readonly ?KeyMatcherInterface $keyMatcher = null,
@@ -46,6 +48,7 @@ final class MaskerBuilder
         private readonly bool $maskMessage = true,
         private readonly bool $traverseObjects = true,
         private readonly array $jsonKeys = [],
+        private readonly array $excludedPatterns = [],
     ) {
     }
 
@@ -101,6 +104,18 @@ final class MaskerBuilder
     public function withValuePatterns(array $patterns): self
     {
         return $this->cloneWith(additionalPatterns: [...$this->additionalPatterns, ...$patterns]);
+    }
+
+    /**
+     * Drops default value patterns by name (keys of {@see DefaultValuePatterns}),
+     * e.g. ['email', 'iban']. Other defaults and card detection stay active.
+     * Unknown names are ignored. Accumulates across calls.
+     *
+     * @param list<string> $names
+     */
+    public function withoutValuePatterns(array $names): self
+    {
+        return $this->cloneWith(excludedPatterns: [...$this->excludedPatterns, ...$names]);
     }
 
     /**
@@ -175,8 +190,13 @@ final class MaskerBuilder
 
     private function defaultValueMatcher(): ValueMatcherInterface
     {
+        $patterns = DefaultValuePatterns::all();
+        foreach ($this->excludedPatterns as $name) {
+            unset($patterns[$name]);
+        }
+
         return new ChainValueMatcher(
-            RegexValueMatcher::withDefaults($this->additionalPatterns),
+            new RegexValueMatcher([...$patterns, ...$this->additionalPatterns]),
             new CreditCardMatcher(),
         );
     }
@@ -185,6 +205,7 @@ final class MaskerBuilder
      * @param list<string>|null          $additionalKeys
      * @param array<string, string>|null $additionalPatterns
      * @param list<string>|null          $jsonKeys
+     * @param list<string>|null          $excludedPatterns
      */
     private function cloneWith(
         ?KeyMatcherInterface $keyMatcher = null,
@@ -198,6 +219,7 @@ final class MaskerBuilder
         ?bool $maskMessage = null,
         ?bool $traverseObjects = null,
         ?array $jsonKeys = null,
+        ?array $excludedPatterns = null,
     ): self {
         return new self(
             $keyMatcher ?? $this->keyMatcher,
@@ -211,6 +233,7 @@ final class MaskerBuilder
             $maskMessage ?? $this->maskMessage,
             $traverseObjects ?? $this->traverseObjects,
             $jsonKeys ?? $this->jsonKeys,
+            $excludedPatterns ?? $this->excludedPatterns,
         );
     }
 }
