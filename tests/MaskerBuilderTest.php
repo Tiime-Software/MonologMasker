@@ -346,6 +346,25 @@ final class MaskerBuilderTest extends TestCase
         self::assertSame('mail ***', $processor($this->record())->message);
     }
 
+    public function testWithoutValuePatternsAppliesToTheMessageToo(): void
+    {
+        $processor = MaskerBuilder::create()
+            ->withoutValuePatterns(['email'])
+            ->withStrategy(new FullMaskStrategy('***'))
+            ->buildProcessor();
+
+        $record = new LogRecord(
+            datetime: new \DateTimeImmutable('@0'),
+            channel: 'app',
+            level: Level::Info,
+            message: 'mail john.doe@example.com card 4242424242424242',
+        );
+
+        // The exclusion flows through the message path, not just context:
+        // the email is left intact while card detection still redacts.
+        self::assertSame('mail john.doe@example.com card ***', $processor($record)->message);
+    }
+
     public function testMessageMaskingCanBeReEnabledWithNoArgument(): void
     {
         $processor = MaskerBuilder::create()
